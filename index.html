@@ -61,7 +61,7 @@
             font-family: 'VT323', monospace;
             color: #2d3436;
             text-align: center;
-            transition: background-color 0.3s;
+            transition: all 0.3s ease;
         }
 
         .pet-character { font-size: 55px; line-height: 1; }
@@ -113,13 +113,14 @@
             cursor: pointer;
             box-shadow: 0 4px 0 var(--shell-dark);
             margin-bottom: 10px;
+            transition: all 0.1s;
         }
 
         .btn-main:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--shell-dark); }
 
-        .history-container { overflow-x: auto; margin-top: 15px;}
+        .history-container { overflow-x: auto; margin-top: 15px; max-height: 200px; }
         table { width: 100%; border-collapse: collapse; font-size: 0.8em; }
-        th { text-align: left; padding: 10px; border-bottom: 2px solid #f1f5f9; }
+        th { text-align: left; padding: 10px; border-bottom: 2px solid #f1f5f9; position: sticky; top: 0; background: white; }
         td { padding: 12px 10px; border-bottom: 1px solid #f1f5f9; }
 
         .btn-delete { color: #e74c3c; cursor: pointer; border: none; background: none; }
@@ -127,50 +128,48 @@
 </head>
 <body>
 
-<div id="app-content">
-    <div class="tamagotchi-shell">
-        <div class="screen-bezel">
-            <div class="lcd-screen">
-                <div class="pet-character" id="petAnim">( ᴗ ˕ ᴗ ) 💤</div>
-                <div class="pet-status" id="statusLabel">KATTY-GOTCHI</div>
-                <div id="rpmDisplay" style="margin-top:5px; opacity:0.7;">LISTO PARA REGISTRO</div>
+<div class="tamagotchi-shell">
+    <div class="screen-bezel">
+        <div class="lcd-screen" id="lcdScreen">
+            <div class="pet-character" id="petAnim">( ᴗ ˕ ᴗ ) 💤</div>
+            <div class="pet-status" id="statusLabel">KATTY-GOTCHI</div>
+            <div id="rpmDisplay" style="margin-top:5px; opacity:0.7;">LISTO PARA REGISTRO</div>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="admin-section">
+            <h4 style="margin-top:0; font-size:12px; color:#64748b;">NUEVA OPCIÓN</h4>
+            <div class="form-row">
+                <input type="text" id="medName" placeholder="Nombre (ej. Omega 3)">
+                <select id="medIcon">
+                    <option value="💊">💊 Cápsula</option>
+                    <option value="💧">💧 Gotas</option>
+                    <option value="💉">💉 Inyección</option>
+                </select>
             </div>
+            <button class="btn-add" id="btnAddMed">+ Agregar al Inventario</button>
         </div>
 
-        <div class="control-panel">
-            <div class="admin-section">
-                <h4 style="margin-top:0; font-size:12px; color:#64748b;">NUEVA OPCIÓN</h4>
-                <div class="form-row">
-                    <input type="text" id="medName" placeholder="Nombre (ej. Omega 3)">
-                    <select id="medIcon">
-                        <option value="💊">💊 Cápsula</option>
-                        <option value="💧">💧 Gotas</option>
-                        <option value="💉">💉 Inyección</option>
-                    </select>
-                </div>
-                <button class="btn-add" id="btnAddMed">+ Agregar al Inventario</button>
-            </div>
+        <div class="form-row">
+            <input type="number" id="rpmInput" placeholder="RPM actual">
+            <input type="text" id="treatInput" placeholder="Medicamento">
+        </div>
 
-            <div class="form-row">
-                <input type="number" id="rpmInput" placeholder="RPM actual (Frecuencia)">
-                <input type="text" id="treatInput" placeholder="Medicamento aplicado">
-            </div>
+        <button class="btn-main" id="btnProcess">REGISTRO Y DAR</button>
 
-            <button class="btn-main" id="btnProcess">REGISTRAR EN FIREBASE</button>
-
-            <div class="history-container">
-                <table id="historyTable">
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>RPM</th>
-                            <th>Med</th>
-                            <th>Acción</th>
-                        </tr>
-                    </thead>
-                    <tbody id="historyBody"></tbody>
-                </table>
-            </div>
+        <div class="history-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Fecha</th>
+                        <th>RPM</th>
+                        <th>Med</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="historyBody"></tbody>
+            </table>
         </div>
     </div>
 </div>
@@ -179,7 +178,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    // --- CONFIGURACIÓN DE FIREBASE ---
+    // --- REEMPLAZA CON TUS CREDENCIALES ---
     const firebaseConfig = {
         apiKey: "AIzaSyAvfhqvaklMrCtqHrQ-CaO2onzo1uWUcwY",
         authDomain: "dog-esponja-dosis.firebaseapp.com",
@@ -192,7 +191,7 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // --- FUNCIONES DE SONIDO Y REACCIÓN ---
+    // --- SONIDO ---
     const playBeep = (f, d) => {
         const a = new (window.AudioContext || window.webkitAudioContext)();
         const o = a.createOscillator();
@@ -202,46 +201,53 @@
         o.start(); o.stop(a.currentTime + d);
     };
 
-    const doReaction = (msg = "¡GLUP! GUARDADO") => {
+    // --- LÓGICA DE SALUD (SEMÁFORO) ---
+    const updateHealthStatus = (rpm) => {
         const pet = document.getElementById('petAnim');
-        const screen = document.querySelector('.lcd-screen');
+        const screen = document.getElementById('lcdScreen');
         const status = document.getElementById('statusLabel');
-        
-        playBeep(900, 0.1); 
-        setTimeout(() => playBeep(1200, 0.1), 100);
-        
-        pet.innerText = "( > ᴗ < ) ✨";
+        const display = document.getElementById('rpmDisplay');
+
+        let color = "#9bbc0f"; 
+        let msg = "REGISTRADO";
+        let face = "( > ᴗ < ) ✨";
+
+        if (rpm > 40) {
+            color = "#e74c3c"; // Rojo - Urgente
+            msg = "URGENTE";
+            face = "( • ᵜ • ) ❗";
+            playBeep(200, 0.5);
+        } else if (rpm >= 30) {
+            color = "#f1c40f"; // Amarillo - Vigilar
+            msg = "VIGILAR";
+            face = "( ʘ ‿ ʘ ) 🔍";
+            playBeep(600, 0.2);
+        } else {
+            playBeep(900, 0.1);
+        }
+
+        screen.style.backgroundColor = color;
         status.innerText = msg;
-        screen.style.backgroundColor = "#f1c40f"; 
-        
+        pet.innerText = face;
+        display.innerText = `RPM: ${rpm}`;
+
         setTimeout(() => {
             pet.innerText = "( ᴗ ˕ ᴗ ) 💤";
             status.innerText = "KATTY-GOTCHI";
             screen.style.backgroundColor = "#9bbc0f";
-        }, 2500);
+            display.innerText = "LISTO PARA REGISTRO";
+        }, 4000);
     };
 
-    // --- EVENTOS ---
-
-    document.getElementById('btnAddMed').onclick = async () => {
-        const name = document.getElementById('medName').value;
-        if(!name) return alert("Escribe el nombre");
-        
-        try {
-            await addDoc(collection(db, "medications"), { 
-                nombre: name, 
-                icono: document.getElementById('medIcon').value,
-                creado: serverTimestamp()
-            });
-            doReaction("MEDICINA AGREGADA");
-            document.getElementById('medName').value = "";
-        } catch (e) { console.error(e); }
-    };
+    // --- ACCIONES ---
 
     document.getElementById('btnProcess').onclick = async () => {
-        const rpm = document.getElementById('rpmInput').value || "0";
-        const med = document.getElementById('treatInput').value || "Dosis";
+        const rpmVal = document.getElementById('rpmInput').value;
+        const rpm = parseInt(rpmVal) || 0;
+        const med = document.getElementById('treatInput').value || "Sin med.";
         
+        if(!rpmVal) return alert("Por favor ingresa las RPM.");
+
         try {
             await addDoc(collection(db, "treatments"), {
                 rpm: rpm,
@@ -249,24 +255,25 @@
                 fecha: new Date().toLocaleString('es-MX'),
                 timestamp: serverTimestamp()
             });
-            doReaction();
+            updateHealthStatus(rpm);
             document.getElementById('rpmInput').value = "";
             document.getElementById('treatInput').value = "";
         } catch (e) { console.error(e); }
     };
 
+    // Cargar historial en tiempo real
     const q = query(collection(db, "treatments"), orderBy("timestamp", "desc"));
     onSnapshot(q, (snap) => {
         const body = document.getElementById('historyBody');
         body.innerHTML = "";
-        snap.forEach((doc) => {
-            const d = doc.data();
+        snap.forEach((docSnap) => {
+            const d = docSnap.data();
             body.innerHTML += `
                 <tr>
                     <td>${d.fecha || '---'}</td>
                     <td><b>${d.rpm}</b></td>
                     <td>${d.tratamiento}</td>
-                    <td><button class="btn-delete" onclick="window.deleteRecord('${doc.id}')">🗑️</button></td>
+                    <td><button class="btn-delete" onclick="window.deleteRecord('${docSnap.id}')">🗑️</button></td>
                 </tr>`;
         });
     });
