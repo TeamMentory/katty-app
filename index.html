@@ -413,21 +413,18 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    // Lógica de Login
+    // Lógica de Login MODIFICADA (Modo Bypass)
     const loginBtn = document.getElementById('loginBtn');
     if (loginBtn) {
-        loginBtn.addEventListener('click', async () => {
-            const email = document.getElementById('loginEmail').value;
-            const pass = document.getElementById('loginPassword').value;
-            const loginError = document.getElementById('loginError');
+        loginBtn.addEventListener('click', () => {
+            const loginScr = document.getElementById('login-screen');
+            const appContent = document.getElementById('app-content');
             
-            try {
-                loginError.style.display = 'none';
-                await signInWithEmailAndPassword(auth, email, pass);
-            } catch (error) {
-                loginError.innerText = "Error: Credenciales incorrectas";
-                loginError.style.display = 'block';
-            }
+            // Esto oculta el login y muestra la app de Katty directo
+            if(loginScr) loginScr.style.display = 'none';
+            if(appContent) appContent.style.display = 'flex';
+            
+            console.log("Acceso temporal concedido");
         });
     }
 
