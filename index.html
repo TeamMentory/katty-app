@@ -97,6 +97,8 @@
         }
 
         .btn-main:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--shell-dark); }
+        .btn-logout { background: #95a5a6; box-shadow: 0 4px 0 #7f8c8d; margin-top: 10px;}
+        .btn-logout:active { box-shadow: 0 2px 0 #7f8c8d; }
 
         .history-container { overflow-x: auto; margin-top: 15px; max-height: 200px; }
         table { width: 100%; border-collapse: collapse; font-size: 0.8em; }
@@ -115,6 +117,8 @@
         .status-alerta { background-color: #fadbd8; color: #c0392b; }
 
         .btn-delete { color: #e74c3c; cursor: pointer; border: none; background: none; }
+        
+        #errorMsg { color: #e74c3c; font-size: 14px; text-align: center; margin-bottom: 10px; display: none; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -122,13 +126,23 @@
 <div class="tamagotchi-shell">
     <div class="screen-bezel">
         <div class="lcd-screen" id="lcdScreen">
-            <div class="pet-character" id="petAnim">( ᴗ ˕ ᴗ ) 💤</div>
-            <div class="pet-status" id="statusLabel">KATTY-GOTCHI</div>
-            <div id="rpmDisplay" style="margin-top:5px; opacity:0.7;">LISTO PARA REGISTRO</div>
+            <div class="pet-character" id="petAnim">( - _ - ) 🔒</div>
+            <div class="pet-status" id="statusLabel">SISTEMA PROTEGIDO</div>
+            <div id="rpmDisplay" style="margin-top:5px; opacity:0.7;">REQUIERE ACCESO</div>
         </div>
     </div>
 
-    <div class="control-panel">
+    <!-- SECCIÓN DE LOGIN -->
+    <div class="control-panel" id="loginSection">
+        <h3 style="text-align:center; font-family: 'VT323', monospace; font-size: 28px; margin-top: 0; color: var(--dark);">INICIAR SESIÓN</h3>
+        <p id="errorMsg">Credenciales incorrectas</p>
+        <input type="email" id="emailInput" placeholder="Correo electrónico" style="margin-bottom: 10px;">
+        <input type="password" id="passwordInput" placeholder="Contraseña" style="margin-bottom: 15px;">
+        <button class="btn-main" id="btnLogin">ENTRAR A KATTY-GOTCHI</button>
+    </div>
+
+    <!-- SECCIÓN PRINCIPAL DE LA APP -->
+    <div class="control-panel" id="appSection" style="display: none;">
         <div class="form-row">
             <input type="number" id="rpmInput" placeholder="RPM actual">
             <select id="treatIcon" style="max-width: 80px;">
@@ -155,12 +169,15 @@
                 <tbody id="historyBody"></tbody>
             </table>
         </div>
+        
+        <button class="btn-main btn-logout" id="btnLogout" style="padding: 10px; font-size: 14px;">CERRAR SESIÓN</button>
     </div>
 </div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
     // --- REEMPLAZA CON TUS CREDENCIALES ---
     const firebaseConfig = {
@@ -169,11 +186,15 @@
         projectId: "dog-esponja-dosis",
         storageBucket: "dog-esponja-dosis.firebasestorage.app",
         messagingSenderId: "1079495320208",
-        appId: "1:1079495320208:web:ddef3358ddfa36696eae15"
+        appId: "1:1079495320208:web:ddef3358ddfa36696eae15",
+        measurementId: "G-9PDL4RHZ2N"
     };
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    let unsubscribeSnapshot = null; // Para detener la lectura de Firestore al salir
 
     const playBeep = (f, d) => {
         const a = new (window.AudioContext || window.webkitAudioContext)();
@@ -184,12 +205,64 @@
         o.start(); o.stop(a.currentTime + d);
     };
 
-    const updateHealthStatus = (rpm) => {
-        const pet = document.getElementById('petAnim');
-        const screen = document.getElementById('lcdScreen');
-        const status = document.getElementById('statusLabel');
-        const display = document.getElementById('rpmDisplay');
+    // --- LOGICA DE AUTENTICACIÓN ---
+    const loginSection = document.getElementById('loginSection');
+    const appSection = document.getElementById('appSection');
+    const petAnim = document.getElementById('petAnim');
+    const statusLabel = document.getElementById('statusLabel');
+    const rpmDisplay = document.getElementById('rpmDisplay');
+    const errorMsg = document.getElementById('errorMsg');
 
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            // Usuario logueado
+            loginSection.style.display = 'none';
+            appSection.style.display = 'block';
+            
+            petAnim.innerText = "( ᴗ ˕ ᴗ ) 💤";
+            statusLabel.innerText = "KATTY-GOTCHI";
+            rpmDisplay.innerText = "LISTO PARA REGISTRO";
+            document.getElementById('lcdScreen').style.backgroundColor = "#9bbc0f";
+            
+            iniciarFirestore();
+        } else {
+            // Usuario no logueado
+            loginSection.style.display = 'block';
+            appSection.style.display = 'none';
+            
+            petAnim.innerText = "( - _ - ) 🔒";
+            statusLabel.innerText = "SISTEMA PROTEGIDO";
+            rpmDisplay.innerText = "REQUIERE ACCESO";
+            document.getElementById('lcdScreen').style.backgroundColor = "#cbd5e0";
+            
+            if (unsubscribeSnapshot) unsubscribeSnapshot(); // Detiene consultas a la BD
+        }
+    });
+
+    document.getElementById('btnLogin').onclick = async () => {
+        const email = document.getElementById('emailInput').value;
+        const password = document.getElementById('passwordInput').value;
+        errorMsg.style.display = 'none';
+        
+        if(!email || !password) return;
+
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+            document.getElementById('emailInput').value = "";
+            document.getElementById('passwordInput').value = "";
+        } catch (error) {
+            errorMsg.style.display = 'block';
+            console.error("Error de login:", error);
+        }
+    };
+
+    document.getElementById('btnLogout').onclick = () => {
+        signOut(auth);
+    };
+
+    // --- LOGICA PRINCIPAL DE LA APP ---
+    const updateHealthStatus = (rpm) => {
+        const screen = document.getElementById('lcdScreen');
         let color = "#9bbc0f"; 
         let msg = "REGISTRADO";
         let face = "( > ᴗ < ) ✨";
@@ -209,15 +282,15 @@
         }
 
         screen.style.backgroundColor = color;
-        status.innerText = msg;
-        pet.innerText = face;
-        display.innerText = `RPM: ${rpm}`;
+        statusLabel.innerText = msg;
+        petAnim.innerText = face;
+        rpmDisplay.innerText = `RPM: ${rpm}`;
 
         setTimeout(() => {
-            pet.innerText = "( ᴗ ˕ ᴗ ) 💤";
-            status.innerText = "KATTY-GOTCHI";
+            petAnim.innerText = "( ᴗ ˕ ᴗ ) 💤";
+            statusLabel.innerText = "KATTY-GOTCHI";
             screen.style.backgroundColor = "#9bbc0f";
-            display.innerText = "LISTO PARA REGISTRO";
+            rpmDisplay.innerText = "LISTO PARA REGISTRO";
         }, 4000);
     };
 
@@ -230,14 +303,11 @@
         
         if(!rpmVal) return alert("Por favor ingresa las RPM.");
 
-        // OPTIMIZACIÓN: Disparar la respuesta visual de inmediato
         updateHealthStatus(rpm);
         
-        // Limpiar campos rápido
         document.getElementById('rpmInput').value = "";
         document.getElementById('treatInput').value = "";
 
-        // Guardar en segundo plano
         try {
             await addDoc(collection(db, "treatments"), {
                 rpm: rpm,
@@ -248,26 +318,28 @@
         } catch (e) { console.error("Error al guardar:", e); }
     };
 
-    const q = query(collection(db, "treatments"), orderBy("timestamp", "desc"));
-    onSnapshot(q, (snap) => {
-        const body = document.getElementById('historyBody');
-        body.innerHTML = "";
-        snap.forEach((docSnap) => {
-            const d = docSnap.data();
-            let stClass = "status-ok", stText = "OK";
-            if (d.rpm > 40) { stClass = "status-alerta"; stText = "ALERTA"; }
-            else if (d.rpm >= 30) { stClass = "status-vigilar"; stText = "VIGILAR"; }
+    function iniciarFirestore() {
+        const q = query(collection(db, "treatments"), orderBy("timestamp", "desc"));
+        unsubscribeSnapshot = onSnapshot(q, (snap) => {
+            const body = document.getElementById('historyBody');
+            body.innerHTML = "";
+            snap.forEach((docSnap) => {
+                const d = docSnap.data();
+                let stClass = "status-ok", stText = "OK";
+                if (d.rpm > 40) { stClass = "status-alerta"; stText = "ALERTA"; }
+                else if (d.rpm >= 30) { stClass = "status-vigilar"; stText = "VIGILAR"; }
 
-            body.innerHTML += `
-                <tr>
-                    <td>${d.fecha || '---'}</td>
-                    <td><b>${d.rpm}</b></td>
-                    <td>${d.tratamiento}</td>
-                    <td><span class="status-badge ${stClass}">${stText}</span></td>
-                    <td><button class="btn-delete" onclick="window.deleteRecord('${docSnap.id}')">🗑️</button></td>
-                </tr>`;
+                body.innerHTML += `
+                    <tr>
+                        <td>${d.fecha || '---'}</td>
+                        <td><b>${d.rpm}</b></td>
+                        <td>${d.tratamiento}</td>
+                        <td><span class="status-badge ${stClass}">${stText}</span></td>
+                        <td><button class="btn-delete" onclick="window.deleteRecord('${docSnap.id}')">🗑️</button></td>
+                    </tr>`;
+            });
         });
-    });
+    }
 
     window.deleteRecord = async (id) => {
         if(confirm("¿Borrar registro?")) {
