@@ -61,6 +61,7 @@
             font-family: 'VT323', monospace;
             color: #2d3436;
             text-align: center;
+            transition: background-color 0.3s;
         }
 
         .pet-character { font-size: 55px; line-height: 1; }
@@ -130,14 +131,13 @@
     <div class="tamagotchi-shell">
         <div class="screen-bezel">
             <div class="lcd-screen">
-                <div class="pet-character">( ᴗ ˕ ᴗ ) 💤</div>
-                <div class="pet-status">KATTY-GOTCHI</div>
+                <div class="pet-character" id="petAnim">( ᴗ ˕ ᴗ ) 💤</div>
+                <div class="pet-status" id="statusLabel">KATTY-GOTCHI</div>
                 <div id="rpmDisplay" style="margin-top:5px; opacity:0.7;">LISTO PARA REGISTRO</div>
             </div>
         </div>
 
         <div class="control-panel">
-            <!-- SECCIÓN NUEVO MEDICAMENTO -->
             <div class="admin-section">
                 <h4 style="margin-top:0; font-size:12px; color:#64748b;">NUEVA OPCIÓN</h4>
                 <div class="form-row">
@@ -151,7 +151,6 @@
                 <button class="btn-add" id="btnAddMed">+ Agregar al Inventario</button>
             </div>
 
-            <!-- REGISTRO DE TRATAMIENTO -->
             <div class="form-row">
                 <input type="number" id="rpmInput" placeholder="RPM actual (Frecuencia)">
                 <input type="text" id="treatInput" placeholder="Medicamento aplicado">
@@ -159,7 +158,6 @@
 
             <button class="btn-main" id="btnProcess">REGISTRAR EN FIREBASE</button>
 
-            <!-- TABLA DE HISTORIAL -->
             <div class="history-container">
                 <table id="historyTable">
                     <thead>
@@ -170,124 +168,18 @@
                             <th>Acción</th>
                         </tr>
                     </thead>
-                    <tbody id="historyBody">
-                        <!-- Datos de Firebase aquí -->
-                    </tbody>
+                    <tbody id="historyBody"></tbody>
                 </table>
             </div>
         </div>
     </div>
 </div>
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-// Tu configuración de Firebase (Manten tus datos actuales)
-const firebaseConfig = {
-    apiKey: "TU_API_KEY",
-    authDomain: "dog-esponja-dosis.firebaseapp.com",
-    projectId: "dog-esponja-dosis",
-    storageBucket: "dog-esponja-dosis.appspot.com",
-    messagingSenderId: "TU_SENDER_ID",
-    appId: "TU_APP_ID"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-
-// --- SISTEMA DE SONIDOS Y REACCIONES ---
-const playSound = (freq, type, duration) => {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-    oscillator.type = type;
-    oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-    oscillator.start();
-    oscillator.stop(audioCtx.currentTime + duration);
-};
-
-const triggerReaction = (statusText) => {
-    const screen = document.querySelector('.lcd-screen');
-    const pet = document.querySelector('.pet-character');
-    
-    // Animación visual
-    pet.innerText = "( > ᴗ < ) ✨";
-    screen.style.backgroundColor = "var(--screen-alert)";
-    
-    // Sonido tipo Tamagotchi
-    playSound(880, 'square', 0.1);
-    setTimeout(() => playSound(1046, 'square', 0.1), 100);
-
-    setTimeout(() => {
-        pet.innerText = "( ᴗ ˕ ᴗ ) 💤";
-        screen.style.backgroundColor = "var(--screen-normal)";
-    }, 2000);
-};
-
-// --- LOGICA DE FIREBASE CON REACCIÓN ---
-
-// 1. Agregar Medicamento
-document.getElementById('btnAddMed').addEventListener('click', async () => {
-    const name = document.getElementById('medName').value;
-    if (!name) return;
-    
-    try {
-        await addDoc(collection(db, "medications"), {
-            nombre: name,
-            icono: document.getElementById('medIcon').value,
-            creado: serverTimestamp()
-        });
-        triggerReaction(); // ¡Reacción al guardar!
-        document.getElementById('medName').value = "";
-    } catch (e) { console.error(e); }
-});
-
-// 2. Registrar Tratamiento (El botón principal)
-document.getElementById('btnProcess').addEventListener('click', async () => {
-    const rpm = document.getElementById('rpmInput').value || "0";
-    const treat = document.getElementById('treatInput').value || "Dosis";
-    
-    try {
-        await addDoc(collection(db, "treatments"), {
-            rpm: rpm,
-            tratamiento: treat,
-            fecha: new Date().toLocaleString('es-MX'),
-            timestamp: serverTimestamp()
-        });
-        
-        triggerReaction(); // Reacción visual y sonora
-        document.getElementById('rpmInput').value = "";
-        document.getElementById('treatInput').value = "";
-    } catch (e) { console.error(e); }
-});
-
-// 3. Escuchar Cambios (Tabla)
-const q = query(collection(db, "treatments"), orderBy("timestamp", "desc"));
-onSnapshot(q, (snapshot) => {
-    const tbody = document.getElementById('historyBody');
-    tbody.innerHTML = "";
-    snapshot.forEach((res) => {
-        const data = res.data();
-        tbody.innerHTML += `
-            <tr>
-                <td>${data.fecha || '---'}</td>
-                <td><b>${data.rpm}</b></td>
-                <td>${data.tratamiento}</td>
-                <td><button class="btn-delete" onclick="window.deleteRecord('${res.id}')">🗑️</button></td>
-            </tr>`;
-    });
-});
-
-window.deleteRecord = async (id) => {
-    if (confirm("¿Eliminar registro?")) {
-        await deleteDoc(doc(db, "treatments", id));
-        playSound(200, 'sawtooth', 0.1); // Sonido de error/borrado
-    }
-};
-    // --- REEMPLAZA ESTOS DATOS ---
+    // --- CONFIGURACIÓN DE FIREBASE ---
     const firebaseConfig = {
         apiKey: "AIzaSyAvfhqvaklMrCtqHrQ-CaO2onzo1uWUcwY",
         authDomain: "dog-esponja-dosis.firebaseapp.com",
@@ -300,68 +192,91 @@ window.deleteRecord = async (id) => {
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // 1. Agregar Medicamento
-    document.getElementById('btnAddMed').addEventListener('click', async () => {
-        const name = document.getElementById('medName').value;
-        const icon = document.getElementById('medIcon').value;
+    // --- FUNCIONES DE SONIDO Y REACCIÓN ---
+    const playBeep = (f, d) => {
+        const a = new (window.AudioContext || window.webkitAudioContext)();
+        const o = a.createOscillator();
+        const g = a.createGain();
+        o.type = "square"; o.frequency.value = f;
+        g.gain.value = 0.1; o.connect(g); g.connect(a.destination);
+        o.start(); o.stop(a.currentTime + d);
+    };
+
+    const doReaction = (msg = "¡GLUP! GUARDADO") => {
+        const pet = document.getElementById('petAnim');
+        const screen = document.querySelector('.lcd-screen');
+        const status = document.getElementById('statusLabel');
         
-        if (!name) return alert("Escribe el nombre");
+        playBeep(900, 0.1); 
+        setTimeout(() => playBeep(1200, 0.1), 100);
+        
+        pet.innerText = "( > ᴗ < ) ✨";
+        status.innerText = msg;
+        screen.style.backgroundColor = "#f1c40f"; 
+        
+        setTimeout(() => {
+            pet.innerText = "( ᴗ ˕ ᴗ ) 💤";
+            status.innerText = "KATTY-GOTCHI";
+            screen.style.backgroundColor = "#9bbc0f";
+        }, 2500);
+    };
+
+    // --- EVENTOS ---
+
+    document.getElementById('btnAddMed').onclick = async () => {
+        const name = document.getElementById('medName').value;
+        if(!name) return alert("Escribe el nombre");
         
         try {
-            await addDoc(collection(db, "medications"), {
-                nombre: name,
-                icono: icon,
+            await addDoc(collection(db, "medications"), { 
+                nombre: name, 
+                icono: document.getElementById('medIcon').value,
                 creado: serverTimestamp()
             });
-            alert("Medicamento guardado");
+            doReaction("MEDICINA AGREGADA");
             document.getElementById('medName').value = "";
         } catch (e) { console.error(e); }
-    });
+    };
 
-    // 2. Registrar Tratamiento
-    document.getElementById('btnProcess').addEventListener('click', async () => {
+    document.getElementById('btnProcess').onclick = async () => {
         const rpm = document.getElementById('rpmInput').value || "0";
-        const treat = document.getElementById('treatInput').value || "Ninguno";
+        const med = document.getElementById('treatInput').value || "Dosis";
         
         try {
             await addDoc(collection(db, "treatments"), {
                 rpm: rpm,
-                tratamiento: treat,
+                tratamiento: med,
                 fecha: new Date().toLocaleString('es-MX'),
                 timestamp: serverTimestamp()
             });
-            alert("✅ Registro exitoso");
+            doReaction();
             document.getElementById('rpmInput').value = "";
             document.getElementById('treatInput').value = "";
         } catch (e) { console.error(e); }
-    });
+    };
 
-    // 3. Escuchar Cambios en Tiempo Real (Tabla)
     const q = query(collection(db, "treatments"), orderBy("timestamp", "desc"));
-    onSnapshot(q, (snapshot) => {
-        const tbody = document.getElementById('historyBody');
-        tbody.innerHTML = "";
-        snapshot.forEach((res) => {
-            const data = res.data();
-            const row = `
+    onSnapshot(q, (snap) => {
+        const body = document.getElementById('historyBody');
+        body.innerHTML = "";
+        snap.forEach((doc) => {
+            const d = doc.data();
+            body.innerHTML += `
                 <tr>
-                    <td>${data.fecha || 'Sin fecha'}</td>
-                    <td><b>${data.rpm}</b></td>
-                    <td>${data.tratamiento}</td>
-                    <td><button class="btn-delete" onclick="window.deleteRecord('${res.id}')">🗑️</button></td>
-                </tr>
-            `;
-            tbody.innerHTML += row;
+                    <td>${d.fecha || '---'}</td>
+                    <td><b>${d.rpm}</b></td>
+                    <td>${d.tratamiento}</td>
+                    <td><button class="btn-delete" onclick="window.deleteRecord('${doc.id}')">🗑️</button></td>
+                </tr>`;
         });
     });
 
-    // 4. Función para borrar (Global para el botón onclick)
     window.deleteRecord = async (id) => {
-        if (confirm("¿Eliminar este registro?")) {
+        if(confirm("¿Borrar registro?")) {
             await deleteDoc(doc(db, "treatments", id));
+            playBeep(300, 0.2);
         }
     };
-
 </script>
 </body>
 </html>
