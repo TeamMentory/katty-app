@@ -790,27 +790,27 @@
         
         if (!email || !pass) return showLoginError("Por favor, ingresa tu correo y contraseña.");
 
-        document.getElementById('loginError').style.display = 'none';
+
+    });
+
+    document.getElementById('loginError').style.display = 'none';
         loginBtn.innerText = "VERIFICANDO...";
+        console.log("Intentando entrar con:", email); // <-- LUZ 1: ¿Lee el correo?
 
         try {
+            console.log("Llamando a Firebase..."); // <-- LUZ 2: ¿Firebase responde?
             await signInWithEmailAndPassword(auth, email, pass);
+            console.log("¡Éxito! Firebase aceptó los datos"); // <-- LUZ 3: ¡Lo logramos!
             loginBtn.innerText = "ENTRAR";
         } catch (error) {
+            console.error("Hubo un error real:", error.code, error.message); // <-- LUZ DE ALERTA
             loginBtn.innerText = "ENTRAR";
             if (['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password'].includes(error.code)) {
-                showLoginError("Correo no registrado. Por favor, contacta al administrador.");
+                showLoginError("Datos incorrectos. Revisa tu contraseña.");
             } else {
                 showLoginError("Error: " + error.message);
             }
         }
-    });
-
-    document.getElementById('logoutBtn').addEventListener('click', () => {
-        signOut(auth).then(() => {
-            document.getElementById('loginEmail').value = '';
-            document.getElementById('loginPassword').value = '';
-            document.getElementById('loginError').style.display = 'none';
         });
     });
 </script>
