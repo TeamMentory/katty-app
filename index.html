@@ -15,7 +15,6 @@
             --screen-danger: #e74c3c; 
             --dark: #2c3e50;
             --success: #2ecc71;
-            --med-blue: #3498db;
         }
 
         body {
@@ -74,14 +73,6 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
 
-        .admin-section {
-            background: #f8fafc;
-            border: 2px solid #edf2f7;
-            border-radius: 15px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-
         .form-row { display: flex; gap: 10px; margin-bottom: 10px; width: 100%; }
         input, select {
             padding: 10px;
@@ -89,17 +80,6 @@
             border-radius: 10px;
             width: 100%;
             box-sizing: border-box;
-        }
-
-        .btn-add {
-            width: 100%;
-            background: var(--success);
-            color: white;
-            border: none;
-            padding: 10px;
-            border-radius: 10px;
-            font-weight: bold;
-            cursor: pointer;
         }
 
         .btn-main {
@@ -123,20 +103,18 @@
         th { text-align: left; padding: 10px; border-bottom: 2px solid #f1f5f9; position: sticky; top: 0; background: white; }
         td { padding: 12px 10px; border-bottom: 1px solid #f1f5f9; }
 
-        .btn-delete { color: #e74c3c; cursor: pointer; border: none; background: none; }
-        
-        /* ESTILOS PARA LA NUEVA COLUMNA ESTADO */
         .status-badge {
             padding: 4px 8px;
             border-radius: 12px;
             font-weight: bold;
             font-size: 0.9em;
             display: inline-block;
-            text-align: center;
         }
         .status-ok { background-color: #d4efdf; color: #27ae60; }
         .status-vigilar { background-color: #fcf3cf; color: #d35400; }
         .status-alerta { background-color: #fadbd8; color: #c0392b; }
+
+        .btn-delete { color: #e74c3c; cursor: pointer; border: none; background: none; }
     </style>
 </head>
 <body>
@@ -151,11 +129,9 @@
     </div>
 
     <div class="control-panel">
-
         <div class="form-row">
             <input type="number" id="rpmInput" placeholder="RPM actual">
-            <!-- NUEVO: Selector de ícono para el tratamiento -->
-            <select id="treatIcon" style="max-width: 80px; padding-left: 5px; padding-right: 5px;">
+            <select id="treatIcon" style="max-width: 80px;">
                 <option value="💊">💊</option>
                 <option value="💧">💧</option>
                 <option value="💉">💉</option>
@@ -172,7 +148,6 @@
                         <th>Fecha</th>
                         <th>RPM</th>
                         <th>Med</th>
-                        <!-- NUEVA: Cabecera Estado -->
                         <th>Estado</th>
                         <th>Acción</th>
                     </tr>
@@ -200,7 +175,6 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // --- SONIDO ---
     const playBeep = (f, d) => {
         const a = new (window.AudioContext || window.webkitAudioContext)();
         const o = a.createOscillator();
@@ -210,7 +184,6 @@
         o.start(); o.stop(a.currentTime + d);
     };
 
-    // --- LÓGICA DE SALUD (SEMÁFORO LCD) ---
     const updateHealthStatus = (rpm) => {
         const pet = document.getElementById('petAnim');
         const screen = document.getElementById('lcdScreen');
@@ -222,12 +195,12 @@
         let face = "( > ᴗ < ) ✨";
 
         if (rpm > 40) {
-            color = "#e74c3c"; // Rojo - Urgente
+            color = "#e74c3c";
             msg = "URGENTE";
             face = "( • ᵜ • ) ❗";
             playBeep(200, 0.5);
         } else if (rpm >= 30) {
-            color = "#f1c40f"; // Amarillo - Vigilar
+            color = "#f1c40f";
             msg = "VIGILAR";
             face = "( ʘ ‿ ʘ ) 🔍";
             playBeep(600, 0.2);
@@ -248,19 +221,23 @@
         }, 4000);
     };
 
-    // --- ACCIONES PRINCIPALES ---
-
     document.getElementById('btnProcess').onclick = async () => {
         const rpmVal = document.getElementById('rpmInput').value;
         const rpm = parseInt(rpmVal) || 0;
-        
-        // NUEVO: Concatenación del ícono + el texto del medicamento
         const treatText = document.getElementById('treatInput').value || "Sin med.";
         const treatIcon = document.getElementById('treatIcon').value;
         const med = `${treatIcon} ${treatText}`;
         
         if(!rpmVal) return alert("Por favor ingresa las RPM.");
 
+        // OPTIMIZACIÓN: Disparar la respuesta visual de inmediato
+        updateHealthStatus(rpm);
+        
+        // Limpiar campos rápido
+        document.getElementById('rpmInput').value = "";
+        document.getElementById('treatInput').value = "";
+
+        // Guardar en segundo plano
         try {
             await addDoc(collection(db, "treatments"), {
                 rpm: rpm,
@@ -268,42 +245,25 @@
                 fecha: new Date().toLocaleString('es-MX'),
                 timestamp: serverTimestamp()
             });
-            updateHealthStatus(rpm);
-            document.getElementById('rpmInput').value = "";
-            document.getElementById('treatInput').value = "";
-        } catch (e) { console.error(e); }
+        } catch (e) { console.error("Error al guardar:", e); }
     };
 
-    // Cargar historial en tiempo real
     const q = query(collection(db, "treatments"), orderBy("timestamp", "desc"));
     onSnapshot(q, (snap) => {
         const body = document.getElementById('historyBody');
         body.innerHTML = "";
         snap.forEach((docSnap) => {
             const d = docSnap.data();
-            
-            // NUEVO: Lógica de evaluación para llenar la columna Estado
-            let estadoClass = "";
-            let estadoTexto = "";
-            
-            if (d.rpm < 30) {
-                estadoClass = "status-ok";
-                estadoTexto = "OK";
-            } else if (d.rpm >= 30 && d.rpm <= 40) {
-                estadoClass = "status-vigilar";
-                estadoTexto = "VIGILAR";
-            } else {
-                estadoClass = "status-alerta";
-                estadoTexto = "ALERTA";
-            }
+            let stClass = "status-ok", stText = "OK";
+            if (d.rpm > 40) { stClass = "status-alerta"; stText = "ALERTA"; }
+            else if (d.rpm >= 30) { stClass = "status-vigilar"; stText = "VIGILAR"; }
 
-            // NUEVO: Inserción de la columna de Estado en la fila
             body.innerHTML += `
                 <tr>
                     <td>${d.fecha || '---'}</td>
                     <td><b>${d.rpm}</b></td>
                     <td>${d.tratamiento}</td>
-                    <td><span class="status-badge ${estadoClass}">${estadoTexto}</span></td>
+                    <td><span class="status-badge ${stClass}">${stText}</span></td>
                     <td><button class="btn-delete" onclick="window.deleteRecord('${docSnap.id}')">🗑️</button></td>
                 </tr>`;
         });
