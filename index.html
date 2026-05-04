@@ -179,10 +179,114 @@
     </div>
 </div>
 
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+// Tu configuración de Firebase (Manten tus datos actuales)
+const firebaseConfig = {
+    apiKey: "TU_API_KEY",
+    authDomain: "dog-esponja-dosis.firebaseapp.com",
+    projectId: "dog-esponja-dosis",
+    storageBucket: "dog-esponja-dosis.appspot.com",
+    messagingSenderId: "TU_SENDER_ID",
+    appId: "TU_APP_ID"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// --- SISTEMA DE SONIDOS Y REACCIONES ---
+const playSound = (freq, type, duration) => {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+    oscillator.start();
+    oscillator.stop(audioCtx.currentTime + duration);
+};
+
+const triggerReaction = (statusText) => {
+    const screen = document.querySelector('.lcd-screen');
+    const pet = document.querySelector('.pet-character');
+    
+    // Animación visual
+    pet.innerText = "( > ᴗ < ) ✨";
+    screen.style.backgroundColor = "var(--screen-alert)";
+    
+    // Sonido tipo Tamagotchi
+    playSound(880, 'square', 0.1);
+    setTimeout(() => playSound(1046, 'square', 0.1), 100);
+
+    setTimeout(() => {
+        pet.innerText = "( ᴗ ˕ ᴗ ) 💤";
+        screen.style.backgroundColor = "var(--screen-normal)";
+    }, 2000);
+};
+
+// --- LOGICA DE FIREBASE CON REACCIÓN ---
+
+// 1. Agregar Medicamento
+document.getElementById('btnAddMed').addEventListener('click', async () => {
+    const name = document.getElementById('medName').value;
+    if (!name) return;
+    
+    try {
+        await addDoc(collection(db, "medications"), {
+            nombre: name,
+            icono: document.getElementById('medIcon').value,
+            creado: serverTimestamp()
+        });
+        triggerReaction(); // ¡Reacción al guardar!
+        document.getElementById('medName').value = "";
+    } catch (e) { console.error(e); }
+});
+
+// 2. Registrar Tratamiento (El botón principal)
+document.getElementById('btnProcess').addEventListener('click', async () => {
+    const rpm = document.getElementById('rpmInput').value || "0";
+    const treat = document.getElementById('treatInput').value || "Dosis";
+    
+    try {
+        await addDoc(collection(db, "treatments"), {
+            rpm: rpm,
+            tratamiento: treat,
+            fecha: new Date().toLocaleString('es-MX'),
+            timestamp: serverTimestamp()
+        });
+        
+        triggerReaction(); // Reacción visual y sonora
+        document.getElementById('rpmInput').value = "";
+        document.getElementById('treatInput').value = "";
+    } catch (e) { console.error(e); }
+});
+
+// 3. Escuchar Cambios (Tabla)
+const q = query(collection(db, "treatments"), orderBy("timestamp", "desc"));
+onSnapshot(q, (snapshot) => {
+    const tbody = document.getElementById('historyBody');
+    tbody.innerHTML = "";
+    snapshot.forEach((res) => {
+        const data = res.data();
+        tbody.innerHTML += `
+            <tr>
+                <td>${data.fecha || '---'}</td>
+                <td><b>${data.rpm}</b></td>
+                <td>${data.tratamiento}</td>
+                <td><button class="btn-delete" onclick="window.deleteRecord('${res.id}')">🗑️</button></td>
+            </tr>`;
+    });
+});
+
+window.deleteRecord = async (id) => {
+    if (confirm("¿Eliminar registro?")) {
+        await deleteDoc(doc(db, "treatments", id));
+        playSound(200, 'sawtooth', 0.1); // Sonido de error/borrado
+    }
+};
     // --- REEMPLAZA ESTOS DATOS ---
     const firebaseConfig = {
         apiKey: "AIzaSyAvfhqvaklMrCtqHrQ-CaO2onzo1uWUcwY",
