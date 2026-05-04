@@ -426,20 +426,65 @@
             
             console.log("Acceso temporal concedido");
         });
-    }
+    // --- FUNCIONES DE REGISTRO REESTABLECIDAS ---
 
-    // Detectar usuario
+    // 1. Agregar Medicamento al Inventario
+    window.addMedication = async () => {
+        const name = document.getElementById('medName').value;
+        const type = document.getElementById('medType').value;
+        if (!name) return alert("Pon el nombre del medicamento");
+        
+        try {
+            await addDoc(collection(db, "medications"), {
+                nombre: name,
+                tipo: type,
+                fecha: new Date().toISOString()
+            });
+            alert("Medicamento agregado");
+            document.getElementById('medName').value = "";
+        } catch (e) { console.error("Error al guardar med:", e); }
+    };
+
+    // 2. Registrar Tratamiento (Dosis)
+    window.processEntry = async () => {
+        const rpm = document.querySelector('input[placeholder="RPM"]')?.value || "--";
+        const tratamiento = "Dosis aplicada"; // Puedes vincularlo a un input si prefieres
+        
+        try {
+            await addDoc(collection(db, "treatments"), {
+                rpm: rpm,
+                tratamiento: tratamiento,
+                fecha: new Date().toLocaleString(),
+                timestamp: new Date()
+            });
+            alert("Tratamiento registrado correctamente");
+        } catch (e) { console.error("Error al registrar:", e); }
+    };
+
+    // 3. Función para borrar (por si hay errores humanos)
+    window.deleteRecord = async (id) => {
+        if (confirm("¿Borrar este registro?")) {
+            await deleteDoc(doc(db, "treatments", id));
+        }
+    };
+window.triggerTestError = () => {
+        console.log("Prueba de error ejecutada");
+        alert("Botón de prueba funcionando");
+    };
+// Detectar usuario
     onAuthStateChanged(auth, (user) => {
         const loginScr = document.getElementById('login-screen');
         const appContent = document.getElementById('app-content');
+        
+        // Como estamos en modo bypass para que Stephy entre ya:
+        if(loginScr) loginScr.style.display = 'none';
+        if(appContent) appContent.style.display = 'flex';
+        
         if (user) {
-            if(loginScr) loginScr.style.display = 'none';
-            if(appContent) appContent.style.display = 'flex';
-        } else {
-            if(loginScr) loginScr.style.display = 'flex';
-            if(appContent) appContent.style.display = 'none';
+            console.log("Usuario detectado:", user.email);
         }
     });
+
 </script>
 </body>
 </html>
