@@ -393,427 +393,56 @@
 
 <!-- SDK FIREBASE INTEGRADO Y LÓGICA GENERAL -->
 <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getAnalytics, logEvent } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
-    import { getCrashlytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-crashlytics.js";
-    import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, query, orderBy, limit, onSnapshot, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-    // --- CONFIGURACIÓN DE FIREBASE ---
+    // RELLENA AQUÍ CON TUS DATOS DE FIREBASE
     const firebaseConfig = {
-        apiKey: "AIzaSyAvfhqvaklMrCtqHrQ-CaO2onzo1uWUcwY",
+        apiKey: "TU_API_KEY",
         authDomain: "dog-esponja-dosis.firebaseapp.com",
         projectId: "dog-esponja-dosis",
-        storageBucket: "dog-esponja-dosis.firebasestorage.app",
+        storageBucket: "dog-esponja-dosis.appspot.com",
         messagingSenderId: "1079495320208",
         appId: "1:1079495320208:web:ddef3358ddfa36696eae15",
-        measurementId: "G-9PDL4RHZ2N" 
+        measurementId: "G-9PDL4RHZ2N"
     };
 
+    // Inicializar Firebase
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
-    const analytics = getAnalytics(app);
-    const crashlytics = getCrashlytics(app);
     const db = getFirestore(app);
 
-    // Contexto Seguro: ID dinámico para aislar proyectos si es necesario
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'katty-gotchi-pro';
-
-    setPersistence(auth, browserLocalPersistence).catch(console.error);
-
-    // --- MANEJO DE ESTADO GLOBAL Y UI ---
-    let inventory = [];
-    let selectedIds = [];
-    let unsubMeds = null;
-    let unsubHistory = null;
-
-    // Función global de Toast Message 
-    function showToast(message) {
-        const toast = document.getElementById('error-toast');
-        toast.innerText = message;
-        toast.style.display = 'block';
-        setTimeout(() => toast.style.display = 'none', 4000);
-    }
-
-    // --- SINTETIZADOR DE AUDIO 8-BITS ---
-    let audioCtx;
-    function playRetroBloop() {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        
-        const oscillator = audioCtx.createOscillator();
-        const gainNode = audioCtx.createGain();
-
-        oscillator.type = 'square';
-        oscillator.frequency.setValueAtTime(440, audioCtx.currentTime);
-        oscillator.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1);
-
-        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioCtx.destination);
-
-        oscillator.start();
-        oscillator.stop(audioCtx.currentTime + 0.1);
-    }
-
-    // --- LÓGICA DE NEGOCIO (FIRESTORE) ---
-
-    // 1. Iniciar Escuchas de Firestore
-    function startRealtimeListeners(user) {
-        // [COLECCIÓN DE MEDICAMENTOS]: Estructura segura -> /users/{userId}/medications
-        // Regla sugerida en consola: match /artifacts/{appId}/users/{userId}/medications/{doc} { allow read, write: if request.auth.uid == userId; }
-        const medsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'medications');
-        unsubMeds = onSnapshot(medsRef, (snapshot) => {
-            inventory = [];
-            snapshot.forEach(doc => {
-                inventory.push({ id: doc.id, ...doc.data() });
-            });
-            // Limpia selecciones de medicamentos que fueron eliminados
-            selectedIds = selectedIds.filter(id => inventory.find(m => m.id === id));
-            renderCabinet();
-        }, (error) => {
-            console.error("Error cargando medicamentos:", error);
-        });
-
-        // [COLECCIÓN DE TRATAMIENTOS]: Estructura segura -> /users/{userId}/treatments
-        const treatmentsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'treatments');
-        unsubHistory = onSnapshot(treatmentsRef, (snapshot) => {
-            let records = [];
-            snapshot.forEach(doc => {
-                records.push({ id: doc.id, ...doc.data() });
-            });
-
-            // Ordenamiento local en memoria para evitar índices compuestos en Firebase
-            records.sort((a, b) => {
-                const timeA = a.timestamp?.toMillis ? a.timestamp.toMillis() : Date.now();
-                const timeB = b.timestamp?.toMillis ? b.timestamp.toMillis() : Date.now();
-                return timeB - timeA;
-            });
+    // Lógica de Login
+    const loginBtn = document.getElementById('loginBtn');
+    if (loginBtn) {
+        loginBtn.addEventListener('click', async () => {
+            const email = document.getElementById('loginEmail').value;
+            const pass = document.getElementById('loginPassword').value;
+            const loginError = document.getElementById('loginError');
             
-            // Renderizamos solo los últimos 5
-            renderHistory(records.slice(0, 5));
-        }, (error) => {
-            console.error("Error cargando historial:", error);
-        });
-    }
-
-    // 2. Detener Escuchas al Cerrar Sesión
-    function stopRealtimeListeners() {
-        if (unsubMeds) unsubMeds();
-        if (unsubHistory) unsubHistory();
-        inventory = [];
-        selectedIds = [];
-    }
-
-    // 3. Modificaciones a la DB (Expuestas al window global para el HTML)
-    
-    // PERSISTENCIA DEL INVENTARIO (AddDoc)
-    window.addMedication = async function() {
-        if (!auth.currentUser) return showToast("Debes iniciar sesión");
-        
-        const nameInput = document.getElementById('medName');
-        const iconSelect = document.getElementById('medIcon');
-        const name = nameInput.value.trim();
-        
-        if (!name) return showToast("El nombre del medicamento no puede estar vacío");
-
-        try {
-            const medsRef = collection(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'medications');
-            await addDoc(medsRef, {
-                name: name,
-                icon: iconSelect.value,
-                createdAt: serverTimestamp()
-            });
-            nameInput.value = '';
-        } catch (error) {
-            reportErrorToFirebase(error);
-            showToast("Error guardando el medicamento en la nube.");
-        }
-    };
-
-    window.deleteMedication = async function(event, docId) {
-        event.stopPropagation();
-        if (!auth.currentUser) return;
-        
-        try {
-            const docRef = doc(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'medications', docId);
-            await deleteDoc(docRef);
-        } catch (error) {
-            reportErrorToFirebase(error);
-        }
-    };
-
-    window.toggleMed = function(id) {
-        if (selectedIds.includes(id)) {
-            selectedIds = selectedIds.filter(i => i !== id);
-        } else {
-            selectedIds.push(id);
-        }
-        renderCabinet();
-    };
-
-    // REGISTRO DE TOMA Y RPM (El 'Glup')
-    window.processEntry = function() {
-        const rpmInput = document.getElementById('rpmInput');
-        const rpm = parseInt(rpmInput.value);
-
-        if (isNaN(rpm)) {
-            return showToast("Por favor, ingresa un valor numérico de RPM válido.");
-        }
-
-        // 1. Efecto Sonoro Inmediato (Audio API nativa de 8-bits)
-        playRetroBloop();
-
-        const lcd = document.getElementById('lcdScreen');
-        const petChar = document.getElementById('petChar');
-        const petStatus = document.getElementById('petStatus');
-        const registerBtn = document.querySelector('button[onclick="processEntry()"]');
-
-        const medsToGive = inventory.filter(m => selectedIds.includes(m.id));
-        const medicationName = medsToGive.map(m => m.name).join(', ') || 'Ninguno';
-
-        // 2. Guardado en Segundo Plano (Paralelo a la animación para no bloquear la UI)
-        if (auth.currentUser) {
-            (async () => {
-                try {
-                    const treatmentsRef = collection(db, 'artifacts', appId, 'users', auth.currentUser.uid, 'treatments');
-                    await addDoc(treatmentsRef, {
-                        rpm: rpm,
-                        medicationName: medicationName, // Propiedad combinada explícita
-                        medications: medsToGive, // Arreglo completo para renders con iconos
-                        timestamp: serverTimestamp(),
-                        userId: auth.currentUser.uid
-                    });
-                } catch (error) {
-                    reportErrorToFirebase(error);
-                    showToast("Error al sincronizar historial. Verifica tu conexión.");
-                }
-            })(); 
-        }
-
-        // 3. Ejecución Paralela de Animación Front-End
-        if (selectedIds.length > 0) {
-            const pillImages = ['pildora VERDE.jpeg', 'Pildora AMARRILLO.jpeg', 'pildora ROJO.jpeg'];
-            const randomPill = pillImages[Math.floor(Math.random() * pillImages.length)];
-            
-            const pill = document.createElement('img');
-            pill.src = randomPill;
-            pill.className = 'flying-pill';
-            pill.onerror = function() {
-                this.src = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path fill="%23ff6b81" d="M160 96a96 96 0 1 1 192 0v320a96 96 0 1 1 -192 0V96z"/></svg>';
-            };
-
-            const btnRect = registerBtn.getBoundingClientRect();
-            const lcdRect = lcd.getBoundingClientRect();
-
-            const startX = btnRect.left + (btnRect.width / 2);
-            const startY = btnRect.top;
-            const endX = lcdRect.left + (lcdRect.width / 2);
-            const endY = lcdRect.top + (lcdRect.height / 2);
-
-            pill.style.left = `${startX}px`;
-            pill.style.top = `${startY}px`;
-            pill.style.setProperty('--tx', `${endX - startX}px`);
-            pill.style.setProperty('--ty', `${endY - startY}px`);
-
-            document.body.appendChild(pill);
-
-            petChar.innerText = "( ^ O ^ )";
-            petStatus.innerText = "¡AHH...!";
-
-            setTimeout(() => {
-                pill.remove(); 
-                const glup = document.getElementById('glupText');
-                glup.classList.add('animate-glup');
-                
-                petChar.innerText = "( ^ ◡ ^ ) ♡";
-                petStatus.innerText = "¡GLUP!";
-
-                setTimeout(() => {
-                    glup.classList.remove('animate-glup');
-                    updatePetMood(rpm);
-                }, 500);
-
-            }, 800);
-
-        } else {
-            updatePetMood(rpm);
-        }
-
-        // Limpieza de campos post-registro
-        selectedIds = [];
-        rpmInput.value = '';
-        renderCabinet();
-    };
-
-    // --- FUNCIONES DE RENDERIZADO VISUAL ---
-    function renderCabinet() {
-        const cab = document.getElementById('medCabinet');
-        if (!cab) return;
-
-        if (inventory.length === 0) {
-            cab.innerHTML = '<div style="grid-column: 1/-1; text-align:center; color:#94a3b8; font-size:0.85em;">Añade tu primer medicamento al inventario.</div>';
-            return;
-        }
-
-        cab.innerHTML = inventory.map(item => `
-            <div class="med-item ${selectedIds.includes(item.id) ? 'active' : ''}" onclick="toggleMed('${item.id}')">
-                <i class="fas ${item.icon}"></i>
-                <span>${item.name}</span>
-                <i class="fas fa-trash-alt delete-pill" onclick="deleteMedication(event, '${item.id}')"></i>
-            </div>
-        `).join('');
-    }
-
-    // HISTORIAL DINÁMICO (Últimos 5 registros)
-    function renderHistory(records) {
-        const tbody = document.querySelector('#historyTable tbody');
-        if (!tbody) return;
-
-        tbody.innerHTML = records.map(record => {
-            const dateObj = record.timestamp?.toDate ? record.timestamp.toDate() : new Date();
-            const dateStr = dateObj.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
-            const timeStr = dateObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-
-            let medsHtml = '<span style="color:#cbd5e0">Ninguno</span>';
-            if (record.medications && record.medications.length > 0) {
-                medsHtml = record.medications.map(m => `
-                    <div class="med-tag"><i class="fas ${m.icon}"></i> ${m.name}</div>
-                `).join('');
-            } else if (record.medicationName && record.medicationName !== 'Ninguno') {
-                medsHtml = `<div class="med-tag">${record.medicationName}</div>`;
+            try {
+                loginError.style.display = 'none';
+                await signInWithEmailAndPassword(auth, email, pass);
+            } catch (error) {
+                loginError.innerText = "Error: Credenciales incorrectas";
+                loginError.style.display = 'block';
             }
-
-            const rpm = record.rpm;
-            const color = rpm < 30 ? '#2ecc71' : (rpm <= 35 ? '#f1c40f' : '#e74c3c');
-            const status = rpm < 30 ? 'NORMAL' : (rpm <= 35 ? 'VIGILAR' : 'ALERTA');
-
-            return `
-                <tr>
-                    <td>
-                        <span class="date-text">${dateStr}</span>
-                        <span class="time-text">${timeStr}</span>
-                    </td>
-                    <td><strong>${rpm}</strong></td>
-                    <td>${medsHtml}</td>
-                    <td><span class="status-badge" style="background:${color}">${status}</span></td>
-                </tr>
-            `;
-        }).join('');
-    }
-
-    function updatePetMood(rpm) {
-        const lcd = document.getElementById('lcdScreen');
-        const petChar = document.getElementById('petChar');
-        const petStatus = document.getElementById('petStatus');
-        const rpmDisplay = document.getElementById('rpmDisplay');
-
-        rpmDisplay.innerText = `RPM: ${rpm}`;
-
-        if (rpm < 30) {
-            lcd.style.background = "var(--screen-normal)";
-            petChar.innerText = "( ᴗ ˕ ᴗ ) 💤";
-            petStatus.innerText = "TODO BIEN";
-        } else if (rpm <= 35) {
-            lcd.style.background = "var(--screen-alert)";
-            petChar.innerText = "( ◉ _ ◉ ) !";
-            petStatus.innerText = "VIGILAR";
-        } else {
-            lcd.style.background = "var(--screen-danger)";
-            petChar.innerText = "( > x < ) ⚠️";
-            petStatus.innerText = "ALERTA MÉDICA";
-        }
-    }
-
-    // --- CRASHLYTICS & ANALYTICS ERROR REPORTING ---
-    function reportErrorToFirebase(errorData) {
-        const errorLocation = `${errorData.source || 'Script'}:${errorData.lineno || 'N/A'}`;
-        const errorMsg = errorData.message || errorData.toString();
-
-        logEvent(analytics, 'exception', {
-            description: errorMsg,
-            fatal: errorData.isFatal || false,
-            error_location: errorLocation,
-            user_id: auth.currentUser ? auth.currentUser.uid : 'anonimo'
         });
-
-        try {
-            crashlytics.log(`[AppWeb] Fallo reportado en ${errorLocation} - Detalles: ${errorMsg}`);
-            crashlytics.recordError(new Error(errorMsg));
-        } catch (err) { }
     }
 
-    window.onerror = function(message, source, lineno, colno, error) {
-        reportErrorToFirebase({ message, source, lineno, isFatal: true });
-        return false; 
-    };
-
-    window.onunhandledrejection = function(event) {
-        reportErrorToFirebase({ message: `Promesa fallida: ${event.reason}`, source: 'promise', lineno: 0, isFatal: false });
-    };
-
-    window.triggerTestError = function() {
-        funcionInexistenteDePrueba(); // Falla intencional para Crashlytics
-    };
-
-    // --- LÓGICA DE LOGIN Y AUTH ---
-    const allowedEmails = ["veterinario@clinica.com", "admin@katty.com","stephy.mx1@gmail.com"];
-
+    // Detectar usuario
     onAuthStateChanged(auth, (user) => {
-        if (user && allowedEmails.includes(user.email)) {
-            document.getElementById('login-screen').style.display = 'none';
-            document.getElementById('app-content').style.display = 'flex';
-            startRealtimeListeners(user);
+        const loginScr = document.getElementById('login-screen');
+        const appContent = document.getElementById('app-content');
+        if (user) {
+            if(loginScr) loginScr.style.display = 'none';
+            if(appContent) appContent.style.display = 'flex';
         } else {
-            if (user) {
-                signOut(auth);
-                showLoginError("Correo no registrado. Por favor, contacta al administrador.");
-            }
-            stopRealtimeListeners();
-            document.getElementById('login-screen').style.display = 'flex';
-            document.getElementById('app-content').style.display = 'none';
+            if(loginScr) loginScr.style.display = 'flex';
+            if(appContent) appContent.style.display = 'none';
         }
-    });
-
-    function showLoginError(message) {
-        const errDiv = document.getElementById('loginError');
-        errDiv.innerText = message;
-        errDiv.style.display = 'block';
-    }
-
-    document.getElementById('loginBtn').addEventListener('click', async () => {
-        const email = document.getElementById('loginEmail').value.trim();
-        const pass = document.getElementById('loginPassword').value;
-        const loginBtn = document.getElementById('loginBtn');
-        
-        if (!email || !pass) return showLoginError("Por favor, ingresa tu correo y contraseña.");
-
-
-    });
-
-    document.getElementById('loginError').style.display = 'none';
-        loginBtn.innerText = "VERIFICANDO...";
-        console.log("Intentando entrar con:", email); // <-- LUZ 1: ¿Lee el correo?
-
-        try {
-            console.log("Llamando a Firebase..."); // <-- LUZ 2: ¿Firebase responde?
-            await signInWithEmailAndPassword(auth, email, pass);
-            console.log("¡Éxito! Firebase aceptó los datos"); // <-- LUZ 3: ¡Lo logramos!
-            loginBtn.innerText = "ENTRAR";
-        } catch (error) {
-            console.error("Hubo un error real:", error.code, error.message); // <-- LUZ DE ALERTA
-            loginBtn.innerText = "ENTRAR";
-            if (['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password'].includes(error.code)) {
-                showLoginError("Datos incorrectos. Revisa tu contraseña.");
-            } else {
-                showLoginError("Error: " + error.message);
-            }
-        }
-        });
     });
 </script>
-
 </body>
 </html>
